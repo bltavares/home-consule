@@ -7,8 +7,15 @@ edition = "2018"
 tokio = { version = "1.12.0", features = ["full"] }
 axum = "0.2.5"
 hyper = "0.14.13"
-tower-http = { version = "0.1", features = ["fs"] }
-rs-consul = "0.2.0"
+tower-http = { version = "0.1", features = ["fs", "trace"] }
+# Waiting on https://github.com/Roblox/rs-consul/pull/19/
+rs-consul = { git = "https://github.com/bltavares/rs-consul", branch = "wip", default-features = false, features = ["rustls-webpki"] }
 structopt = "0.3.23"
 handlebars = "4.1.3"
 serde = "1.0"
+tracing = "0.1"
+tracing-subscriber = "0.2"
+
+[profile.release]
+lto = true
+codegen-units = 1

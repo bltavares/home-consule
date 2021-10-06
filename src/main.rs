@@ -9,17 +9,48 @@ use handlebars::Handlebars;
 use rs_consul::{Config, Consul};
 use std::convert::Infallible;
 use std::net::SocketAddr;
-use tower_http::services::ServeDir;
+use structopt::StructOpt;
+use tower_http::{services::ServeDir, trace::TraceLayer};
+
+#[derive(Debug, StructOpt)]
+#[structopt(
+    name = "home-consule",
+    about = "A (micro) dashboard for your homelab integrated with Consul",
+    rename_all = "kebab-case"
+)]
+struct Args {
+    #[structopt(long, env = "CONSUL_HTTP_TOKEN", hide_env_values = true)]
+    consul_http_token: Option<String>,
+    #[structopt(
+        long,
+        env = "CONSUL_HTTP_ADDR",
+        default_value = "http://localhost:8500"
+    )]
+    consul_http_addr: String,
+
+    /// Monitors the index.hbs file for changes on every request. Disabled by default.
+    #[structopt(short = "d", long)]
+    autoreload: bool,
+
+    /// The name of the Handlebars file template
+    #[structopt(short = "t", long, default_value = "index.hbs")]
+    template: String,
+
+    /// The address for the server to listen to
+    #[structopt(short, long, default_value = "0.0.0.0:3000")]
+    listen: SocketAddr,
+}
 
 async fn root(
     Extension(engine): Extension<Handlebars<'_>>,
     Extension(config): Extension<Config>,
 ) -> impl IntoResponse {
-    let data = Consul::new(config.clone())
+    let mut data = Consul::new(config.clone())
         .get_all_registered_service_names(None)
         .await
         .unwrap_or_else(|_| panic!("Could not connect to consul server on {}", config.address))
         .response;
+    data.sort();
 
     let content = engine
         .render("index", &data)
@@ -29,14 +60,26 @@ async fn root(
 
 #[tokio::main]
 async fn main() {
-    let file = "index.hbs"; // TODO get from cli
-    let mut engine = Handlebars::new();
-    engine.set_dev_mode(true); // TODO set from cli
-    engine
-        .register_template_file("index", file)
-        .expect("File 'index.hbs' not found on current dir");
+    let args = Args::from_args();
 
-    let config = Config::from_env(); // TODO set from cli
+    // Set the RUST_LOG, if it hasn't been explicitly defined
+    if std::env::var_os("RUST_LOG").is_none() {
+        std::env::set_var("RUST_LOG", "home_consule=info,tower_http=info")
+    }
+
+    tracing_subscriber::fmt::init();
+
+    let file = args.template;
+    let mut engine = Handlebars::new();
+    engine.set_dev_mode(args.autoreload);
+    engine
+        .register_template_file("index", &file)
+        .unwrap_or_else(|_| panic!("File '{}' not found on current dir", file));
+
+    let config = Config {
+        address: args.consul_http_addr,
+        token: args.consul_http_token,
+    };
 
     let app = Router::new()
         .nest(
@@ -50,11 +93,17 @@ async fn main() {
         )
         .route("/", get(root))
         .layer(AddExtensionLayer::new(engine))
-        .layer(AddExtensionLayer::new(config));
+        .layer(AddExtensionLayer::new(config))
+        .layer(TraceLayer::new_for_http());
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000)); // TODO read from cli
-    hyper::Server::bind(&addr)
+    let address = args.listen;
+    hyper::Server::bind(&address)
         .serve(app.into_make_service())
         .await
-        .unwrap_or_else(|_| panic!("Could not start server on the current address: {:?}", addr));
+        .unwrap_or_else(|_| {
+            panic!(
+                "Could not start server on the current address: {:?}",
+                address
+            )
+        });
 }
