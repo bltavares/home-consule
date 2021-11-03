@@ -1,28 +1,28 @@
 IMAGE = bltavares/home-consule
-VERSION = 0.0.1
+VERSION = 0.1.0
 CACHE_BUST = $(shell date -u +"%Y-%m-%dT00:00:00Z")
 
 define build_image
   docker build . --pull \
     --tag $(IMAGE):$(1) \
-		--tag $(IMAGE):$(VERSION)-$(1) \
-		--build-arg VERSION=$(VERSION) \
-		--build-arg BUILD_DATE=$(CACHE_BUST) \
-		--build-arg BUILDER_ARCH=$(1) \
-		--build-arg TARGET_ARCH=$(2)
+	--tag $(IMAGE):$(VERSION)-$(1) \
+	--build-arg VERSION=$(VERSION) \
+	--build-arg BUILD_DATE=$(CACHE_BUST) \
+	--build-arg BUILDER_ARCH=$(2) \
+	--build-arg TARGET_ARCH=$(3)
 endef
 
 amd64:
-	$(call build_image,x86_64-musl,x86_64-unknown-linux-musl)
+	$(call build_image,amd64,x86_64-musl,x86_64-unknown-linux-musl)
 
 arm64:
-	$(call build_image,aarch64-musl,aarch64-unknown-linux-musl)
+	$(call build_image,arm64v8,aarch64-musl,aarch64-unknown-linux-musl)
 
 armhf:
-	$(call build_image,armv7-musleabihf,armv7-unknown-linux-musleabihf)
+	$(call build_image,arm32v7,armv7-musleabihf,armv7-unknown-linux-musleabihf)
 
 armel:
-	$(call build_image,arm-musleabi,arm-unknown-linux-musleabi)
+	$(call build_image,arm32v5,arm-musleabi,arm-unknown-linux-musleabi)
 
 
 publish:
